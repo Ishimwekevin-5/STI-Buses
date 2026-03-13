@@ -4,6 +4,8 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
 import { 
   Bus, 
   Users, 
@@ -18,21 +20,20 @@ import {
   Home, 
   Wifi,
   Bell,
-  Settings
+  Settings,
+  MapPin,
+  Navigation
 } from "lucide-react";
 
-// ─── DATA ────────────────────────────────────────────────────────────────────
-const INITIAL_STUDENTS = [
-  { id: 1, ref: "102401", name: "Amina Uwimana",    grade: "S4", bus: "Bus A", route: "Kicukiro",    paid: true,  expected: true,  parent: "0788-123-456", photo: "AU", term: "Term 1" },
-  { id: 2, ref: "102402", name: "David Nkurunziza", grade: "S2", bus: "Bus A", route: "Kicukiro",    paid: true,  expected: true,  parent: "0788-234-567", photo: "DN", term: "Term 1" },
-  { id: 3, ref: "102403", name: "Grace Mukamana",   grade: "S6", bus: "Bus B", route: "Kimironko",   paid: false, expected: true,  parent: "0788-345-678", photo: "GM", term: "Term 1" },
-  { id: 4, ref: "102404", name: "Eric Habimana",    grade: "S3", bus: "Bus A", route: "Kicukiro",    paid: true,  expected: false, parent: "0788-456-789", photo: "EH", term: "Term 1" },
-  { id: 5, ref: "102405", name: "Aline Ingabire",   grade: "S5", bus: "Bus C", route: "Nyamirambo",  paid: true,  expected: true,  parent: "0788-567-890", photo: "AI", term: "Term 1" },
-  { id: 6, ref: "102406", name: "Jean Bizimana",    grade: "S1", bus: "Bus A", route: "Kicukiro",    paid: true,  expected: true,  parent: "0788-678-901", photo: "JB", term: "Term 1" },
-  { id: 7, ref: "102407", name: "Diane Uwase",      grade: "S4", bus: "Bus B", route: "Kimironko",   paid: true,  expected: true,  parent: "0788-789-012", photo: "DU", term: "Term 1" },
-  { id: 8, ref: "102408", name: "Patrick Nshuti",   grade: "S2", bus: "Bus C", route: "Nyamirambo",  paid: false, expected: true,  parent: "0788-890-123", photo: "PN", term: "Term 1" },
-];
+// Fix for Leaflet default icon issue in React
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
+// ─── DATA ────────────────────────────────────────────────────────────────────
 const BUSES = ["Bus A", "Bus B", "Bus C"];
 const ROUTES: Record<string, string> = { 
   "Bus A": "Kicukiro → School", 
@@ -40,13 +41,48 @@ const ROUTES: Record<string, string> = {
   "Bus C": "Nyamirambo → School" 
 };
 
+const GRADES = ["S1","S2","S3","S4","S5","S6"];
+
+const generateInitialStudents = () => {
+  const students = [];
+  const firstNames = ["Amina", "David", "Grace", "Eric", "Aline", "Jean", "Diane", "Patrick", "Sonia", "Kevin", "Alice", "Bob", "Charlie", "Doris", "Eve", "Frank", "Gloria", "Henry", "Iris", "Jack", "Kathy", "Leo", "Mona", "Nick", "Olivia", "Paul", "Quincy", "Rose", "Sam", "Tina"];
+  const lastNames = ["Uwimana", "Nkurunziza", "Mukamana", "Habimana", "Ingabire", "Bizimana", "Uwase", "Nshuti", "Umutoni", "Mugisha", "Mutoni", "Kayisire", "Shema", "Uwineza", "Mutesi", "Gakuba", "Umutesi", "Rugamba", "Uwera", "Ntwari", "Mukantwali", "Ndayisaba", "Ingabire", "Habineza", "Uwera", "Kagame", "Umutoni", "Mukamana", "Shema", "Uwase"];
+  
+  let idCounter = 1;
+  BUSES.forEach(bus => {
+    for (let i = 0; i < 30; i++) {
+      const name = `${firstNames[i]} ${lastNames[(i + idCounter) % 30]}`;
+      students.push({
+        id: idCounter++,
+        ref: String(102400 + idCounter),
+        name,
+        grade: GRADES[i % GRADES.length],
+        bus,
+        route: ROUTES[bus].split(" ")[0],
+        paid: i !== 5 && i !== 15, // Most have paid
+        parent: `0788-${100 + i}-${200 + i}`,
+        photo: name.split(" ").map(n => n[0]).join("").toUpperCase(),
+        term: "Term 1"
+      });
+    }
+  });
+  return students;
+};
+
+const INITIAL_STUDENTS = generateInitialStudents();
+
 const BUS_DETAILS: Record<string, { plate: string, driver: string, phone: string }> = {
   "Bus A": { plate: "RAE 123 A", driver: "John Doe", phone: "0788-111-222" },
   "Bus B": { plate: "RAE 456 B", driver: "Jane Smith", phone: "0788-333-444" },
   "Bus C": { plate: "RAE 789 C", driver: "Mike Ross", phone: "0788-555-666" }
 };
 
-const GRADES = ["S1","S2","S3","S4","S5","S6"];
+const BUS_LOCATIONS: Record<string, { lat: number, lng: number, lastUpdate: string }> = {
+  "Bus A": { lat: -1.9441, lng: 30.0619, lastUpdate: "2 mins ago" },
+  "Bus B": { lat: -1.9706, lng: 30.1044, lastUpdate: "Just now" },
+  "Bus C": { lat: -1.9612, lng: 30.0447, lastUpdate: "5 mins ago" }
+};
+
 const TERMS = ["Term 1", "Term 2", "Term 3"];
 const CURRENT_TERM = "Term 1";
 
@@ -181,15 +217,16 @@ function Toast({ toasts }: { toasts: any[] }) {
 }
 
 // ─── SCANNER VIEW ────────────────────────────────────────────────────────────
-function ScannerView({ students, activeBus, boardedIds, usedRefs, onBoard, archiveSession, addToast }: any) {
+function ScannerView({ students, activeBus, boardedLogs, usedRefs, onBoard, archiveSession, addToast }: any) {
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState("idle");
   const [result, setResult] = useState<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const busStudents = students.filter((s: any) => s.bus === activeBus);
-  const boarded = busStudents.filter((s: any) => boardedIds.includes(s.id));
-  const pending = busStudents.filter((s: any) => !boardedIds.includes(s.id));
+  const boarded = busStudents.filter((s: any) => boardedLogs.some((l: any) => l.id === s.id));
+  const pending = busStudents.filter((s: any) => !boardedLogs.some((l: any) => l.id === s.id));
+  const driver = BUS_DETAILS[activeBus];
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -219,8 +256,6 @@ function ScannerView({ students, activeBus, boardedIds, usedRefs, onBoard, archi
         verdict = { ok: false, code: "WRONG_BUS", label: "Wrong Bus", detail: `${student.name} is assigned to ${student.bus}.`, student };
       } else if (!student.paid) {
         verdict = { ok: false, code: "UNPAID", label: "Fee Pending", detail: `Transport fee not cleared for ${student.name}.`, student };
-      } else if (!student.expected) {
-        verdict = { ok: false, code: "ABSENT", label: "Marked Absent", detail: `${student.name} is not expected today.`, student };
       } else if (usedRefs.includes(code)) {
         verdict = { ok: false, code: "USED", label: "Reference Used", detail: `Bank slip ${code} has already been used.`, student: students.find((s: any) => s.ref === code) };
       } else {
@@ -235,7 +270,7 @@ function ScannerView({ students, activeBus, boardedIds, usedRefs, onBoard, archi
 
   const reset = () => { setInput(""); setResult(null); setPhase("idle"); setTimeout(()=>inputRef.current?.focus(),50); };
 
-  const scanColor = result ? (result.ok ? "#00e676" : result.code==="UNPAID"||result.code==="ABSENT"?"#ffc800":"#ff1744") : "#ffc800";
+  const scanColor = result ? (result.ok ? "#00e676" : result.code==="UNPAID"?"#ffc800":"#ff1744") : "#ffc800";
 
   return (
     <div style={{ display:"flex", gap:24, height:"100%" }}>
@@ -322,7 +357,7 @@ function ScannerView({ students, activeBus, boardedIds, usedRefs, onBoard, archi
           }}>
             <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
               <div style={{ width:44, height:44, borderRadius:10, background:scanColor+"22", border:`1px solid ${scanColor}55`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>
-                {result.ok?"✅":result.code==="UNPAID"?"💳":result.code==="ABSENT"?"📋":result.code==="DUPLICATE"?"🔁":"❌"}
+                {result.ok?"✅":result.code==="UNPAID"?"💳":result.code==="DUPLICATE"?"🔁":"❌"}
               </div>
               <div>
                 <div style={{ fontSize:15, fontWeight:700, color:scanColor }}>{result.label}</div>
@@ -363,7 +398,25 @@ function ScannerView({ students, activeBus, boardedIds, usedRefs, onBoard, archi
 
       {/* Boarding List */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", gap:16 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+        {/* Driver (No Verification Required) */}
+        <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #21262d", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#58a6ff", boxShadow: "0 0 8px #58a6ff" }} />
+            <span style={{ fontSize: 11, color: "#8b949e", letterSpacing: 2 }}>DRIVER (SYSTEM VERIFIED)</span>
+          </div>
+          <div style={{ padding: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, background: "#58a6ff08" }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: "#58a6ff22", color: "#58a6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{driver.driver[0]}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, color: "#e6edf3" }}>{driver.driver}</div>
+                <div style={{ fontSize: 10, color: "#8b949e" }}>{driver.plate} · Assigned Driver</div>
+              </div>
+              <div style={{ fontSize: 10, color: "#58a6ff", fontWeight: 700 }}>READY</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, flex: 1 }}>
           {/* Boarded */}
           <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, overflow:"hidden" }}>
             <div style={{ padding:"12px 16px", borderBottom:"1px solid #21262d", display:"flex", alignItems:"center", gap:8 }}>
@@ -400,7 +453,6 @@ function ScannerView({ students, activeBus, boardedIds, usedRefs, onBoard, archi
                     <div style={{ fontSize:10, color:"#555" }}>{s.ref} · {s.grade}</div>
                   </div>
                   {!s.paid && <div style={{ fontSize:9, color:"#ffc800", background:"#ffc80022", padding:"2px 6px", borderRadius:4 }}>UNPAID</div>}
-                  {!s.expected && <div style={{ fontSize:9, color:"#a78bfa", background:"#a78bfa22", padding:"2px 6px", borderRadius:4 }}>ABSENT</div>}
                 </div>
               ))}
             </div>
@@ -418,12 +470,25 @@ function StudentsView({ students, setStudents, addToast }: any) {
   const [search, setSearch] = useState("");
   const [filterBus, setFilterBus] = useState("All");
 
-  const filtered = students.filter((s: any) =>
-    (filterBus==="All"||s.bus===filterBus) &&
-    (s.name.toLowerCase().includes(search.toLowerCase())||s.ref.includes(search.toUpperCase()))
-  );
+  const filtered = students.filter((s: any) => {
+    const query = search.toLowerCase();
+    const matchesBus = filterBus === "All" || s.bus === filterBus;
+    
+    const feeStatus = s.paid ? "paid cleared" : "unpaid pending";
+    
+    const matchesSearch = 
+      s.name.toLowerCase().includes(query) ||
+      s.ref.toLowerCase().includes(query) ||
+      s.grade.toLowerCase().includes(query) ||
+      s.term.toLowerCase().includes(query) ||
+      s.bus.toLowerCase().includes(query) ||
+      s.route.toLowerCase().includes(query) ||
+      feeStatus.includes(query);
 
-  const openAdd = () => { setForm({ name:"", grade:"S1", bus:"Bus A", route:"Kicukiro", paid:true, expected:true, parent:"", term: CURRENT_TERM }); setModal("add"); };
+    return matchesBus && matchesSearch;
+  });
+
+  const openAdd = () => { setForm({ name:"", grade:"S1", bus:"Bus A", route:"Kicukiro", paid:true, parent:"", term: CURRENT_TERM }); setModal("add"); };
   const openEdit = (s: any) => { setForm({...s}); setModal("edit"); };
   const save = () => {
     if (!form.name || !form.parent) return addToast("Fill all required fields", "error");
@@ -465,11 +530,11 @@ function StudentsView({ students, setStudents, addToast }: any) {
 
       {/* Table */}
       <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 60px 80px 80px 100px 80px 80px 80px", padding: "10px 16px", borderBottom: "1px solid #21262d", fontSize: 10, color: "#8b949e", letterSpacing: 2 }}>
-          <span>BANK SLIP</span><span>NAME</span><span>GR</span><span>TERM</span><span>BUS</span><span>ROUTE</span><span>FEE</span><span>TODAY</span><span>ACTIONS</span>
+        <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 60px 80px 80px 100px 80px 80px", padding: "10px 16px", borderBottom: "1px solid #21262d", fontSize: 10, color: "#8b949e", letterSpacing: 2 }}>
+          <span>BANK SLIP</span><span>NAME</span><span>GR</span><span>TERM</span><span>BUS</span><span>ROUTE</span><span>FEE</span><span>ACTIONS</span>
         </div>
         {filtered.map((s: any, i: number) => (
-          <div key={s.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 60px 80px 80px 100px 80px 80px 80px", padding: "12px 16px", borderBottom: i < filtered.length - 1 ? "1px solid #161b22" : "none", alignItems: "center", transition: "background 0.15s" }}
+          <div key={s.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 60px 80px 80px 100px 80px 80px", padding: "12px 16px", borderBottom: i < filtered.length - 1 ? "1px solid #161b22" : "none", alignItems: "center", transition: "background 0.15s" }}
           >
             <span style={{ fontSize: 11, color: "#ffc800", fontFamily: "'DM Mono',monospace" }}>{s.ref}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -481,7 +546,6 @@ function StudentsView({ students, setStudents, addToast }: any) {
             <span style={{ fontSize: 12, color: "#8b949e" }}>{s.bus}</span>
             <span style={{ fontSize: 11, color: "#8b949e" }}>{s.route}</span>
             <span style={{ fontSize: 11, color: s.paid ? "#00e676" : "#ff1744" }}>{s.paid ? "✓ Paid" : "✗ Due"}</span>
-            <span style={{ fontSize: 11, color: s.expected ? "#00e676" : "#a78bfa" }}>{s.expected ? "Present" : "Absent"}</span>
             <div style={{ display: "flex", gap: 6 }}>
               <button onClick={() => openEdit(s)} style={{ background: "transparent", border: "1px solid #21262d", borderRadius: 6, padding: "4px 8px", color: "#8b949e", cursor: "pointer" }}><Edit3 size={12} /></button>
               <button onClick={() => del(s.id, s.name)} style={{ background: "transparent", border: "1px solid #21262d", borderRadius: 6, padding: "4px 8px", color: "#ff1744", cursor: "pointer" }}><Trash2 size={12} /></button>
@@ -513,7 +577,7 @@ function StudentsView({ students, setStudents, addToast }: any) {
                   </select>
                 </div>
               ))}
-              {( [["Fee Paid", "paid"], ["Expected Today", "expected"]] as const).map(([label, key]) => (
+              {( [["Fee Paid", "paid"]] as const).map(([label, key]) => (
                 <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px", background: "#0d1117", borderRadius: 8, border: "1px solid #21262d", cursor: "pointer" }} onClick={() => setForm((p: any) => ({ ...p, [key]: !p[key] }))}>
                   <div style={{ width: 18, height: 18, borderRadius: 4, background: form[key] ? "#00e676" : "#21262d", border: `1px solid ${form[key] ? "#00e676" : "#30363d"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>{form[key] ? "✓" : ""}</div>
                   <span style={{ fontSize: 12, color: "#8b949e" }}>{label}</span>
@@ -532,83 +596,107 @@ function StudentsView({ students, setStudents, addToast }: any) {
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
-function Dashboard({ students, boardedIds }: any) {
+function Dashboard({ students, boardedLogs, role, setView, setActiveBus }: any) {
   const total = students.length;
   const paid = students.filter((s: any)=>s.paid).length;
-  const expected = students.filter((s: any)=>s.expected).length;
-  const boarded = boardedIds.length;
+  const boardedCount = boardedLogs.length;
 
   const busStats = BUSES.map(b => ({
     bus: b, route: ROUTES[b],
     total: students.filter((s: any)=>s.bus===b).length,
-    boarded: students.filter((s: any)=>s.bus===b&&boardedIds.includes(s.id)).length,
+    boarded: students.filter((s: any)=>s.bus===b && boardedLogs.some((l: any) => l.id === s.id)).length,
     paid: students.filter((s: any)=>s.bus===b&&s.paid).length,
   }));
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-      {/* KPI Cards */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16 }}>
-        {[
-          { label:"TOTAL STUDENTS", value:total, color:"#ffc800", icon: Users },
-          { label:"BOARDED TODAY", value:boarded, color:"#00e676", icon: Check },
-          { label:"FEE CLEARED", value:paid, color:"#58a6ff", icon: Wifi },
-          { label:"EXPECTED TODAY", value:expected, color:"#a78bfa", icon: BarChart3 },
-        ].map(k=>(
-          <div key={k.label} style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, padding:"20px" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-              <div style={{ fontSize:9, color:"#8b949e", letterSpacing:2 }}>{k.label}</div>
-              <div style={{ color:k.color, opacity:0.7 }}><k.icon size={14}/></div>
-            </div>
-            <div style={{ fontSize:36, fontWeight:800, color:k.color, fontFamily:"'DM Mono',monospace" }}>{k.value}</div>
-            <div style={{ height:4, background:"#21262d", borderRadius:2, marginTop:12 }}>
-              <div style={{ height:"100%", background:k.color, borderRadius:2, width:`${(k.value/total)*100}%`, transition:"width 0.5s" }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Bus Status */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16 }}>
-        {busStats.map(b=>(
-          <div key={b.bus} style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, padding:"20px" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-              <div style={{ width:36, height:36, borderRadius:8, background:"#ffc80022", color:"#ffc800", display:"flex", alignItems:"center", justifyContent:"center" }}><Bus size={18}/></div>
-              <div>
-                <div style={{ fontSize:14, color:"#e6edf3", fontWeight:700 }}>{b.bus}</div>
-                <div style={{ fontSize:10, color:"#8b949e" }}>{b.route}</div>
+      {/* KPI Cards - Only for Manager */}
+      {role === "manager" && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16 }}>
+          {[
+            { label:"TOTAL STUDENTS", value:total, color:"#ffc800", icon: Users },
+            { label:"BOARDED TODAY", value:boardedCount, color:"#00e676", icon: Check },
+            { label:"FEE CLEARED", value:paid, color:"#58a6ff", icon: Wifi },
+          ].map(k=>(
+            <div key={k.label} style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, padding:"20px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+                <div style={{ fontSize:9, color:"#8b949e", letterSpacing:2 }}>{k.label}</div>
+                <div style={{ color:k.color, opacity:0.7 }}><k.icon size={14}/></div>
+              </div>
+              <div style={{ fontSize:36, fontWeight:800, color:k.color, fontFamily:"'DM Mono',monospace" }}>{k.value}</div>
+              <div style={{ height:4, background:"#21262d", borderRadius:2, marginTop:12 }}>
+                <div style={{ height:"100%", background:k.color, borderRadius:2, width:`${(k.value/total)*100}%`, transition:"width 0.5s" }} />
               </div>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-              {[["STUDENTS",b.total,"#8b949e"],["BOARDED",b.boarded,"#00e676"],["FEE OK",b.paid,"#58a6ff"]].map(([l,v,c])=>(
-                <div key={l as string} style={{ background:"#161b22", borderRadius:8, padding:"10px 8px", textAlign:"center" }}>
-                  <div style={{ fontSize:18, fontWeight:700, color:c as string }}>{v}</div>
-                  <div style={{ fontSize:9, color:"#555", letterSpacing:1, marginTop:2 }}>{l}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Bus Status - Only for Manager */}
+      {role === "manager" && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16 }}>
+          {busStats.map(b=>(
+            <div key={b.bus} style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, padding:"20px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:36, height:36, borderRadius:8, background:"#ffc80022", color:"#ffc800", display:"flex", alignItems:"center", justifyContent:"center" }}><Bus size={18}/></div>
+                  <div>
+                    <div style={{ fontSize:14, color:"#e6edf3", fontWeight:700 }}>{b.bus}</div>
+                    <div style={{ fontSize:10, color:"#8b949e" }}>{b.route}</div>
+                    <div style={{ fontSize:9, color:"#555", marginTop:2 }}>Driver: {BUS_DETAILS[b.bus].driver}</div>
+                  </div>
                 </div>
-              ))}
+                <button 
+                  onClick={() => { setActiveBus(b.bus); setView("fleet-map"); }}
+                  style={{ 
+                    padding: "6px 10px", background: "transparent", border: "1px solid #21262d", 
+                    borderRadius: 6, color: "#8b949e", fontSize: 9, fontWeight: 700, cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 4
+                  }}
+                >
+                  <MapPin size={10} /> TRACK
+                </button>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                {[["STUDENTS",b.total,"#8b949e"],["BOARDED",b.boarded,"#00e676"],["FEE OK",b.paid,"#58a6ff"]].map(([l,v,c])=>(
+                  <div key={l as string} style={{ background:"#161b22", borderRadius:8, padding:"10px 8px", textAlign:"center" }}>
+                    <div style={{ fontSize:18, fontWeight:700, color:c as string }}>{v}</div>
+                    <div style={{ fontSize:9, color:"#555", letterSpacing:1, marginTop:2 }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ height:6, background:"#21262d", borderRadius:3, marginTop:16 }}>
+                <div style={{ height:"100%", background:"linear-gradient(90deg,#00e676,#00e67688)", borderRadius:3, width:`${b.total?((b.boarded/b.total)*100):0}%`, transition:"width 0.5s" }} />
+              </div>
+              <div style={{ fontSize:10, color:"#8b949e", marginTop:6 }}>{b.boarded}/{b.total} boarded</div>
             </div>
-            <div style={{ height:6, background:"#21262d", borderRadius:3, marginTop:16 }}>
-              <div style={{ height:"100%", background:"linear-gradient(90deg,#00e676,#00e67688)", borderRadius:3, width:`${b.total?((b.boarded/b.total)*100):0}%`, transition:"width 0.5s" }} />
-            </div>
-            <div style={{ fontSize:10, color:"#8b949e", marginTop:6 }}>{b.boarded}/{b.total} boarded</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Recent */}
       <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, overflow:"hidden" }}>
         <div style={{ padding:"14px 20px", borderBottom:"1px solid #21262d", fontSize:11, color:"#8b949e", letterSpacing:2 }}>RECENTLY BOARDED</div>
-        {boardedIds.length===0 && <div style={{ padding:"32px", textAlign:"center", color:"#555" }}>No boardings yet today</div>}
-        {students.filter((s: any)=>boardedIds.includes(s.id)).slice(-5).reverse().map((s: any,i: number)=>(
-          <div key={s.id} style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 20px", borderBottom:i<4?"1px solid #161b22":"none" }}>
-            <div style={{ width:36, height:36, borderRadius:8, background:"#00e67622", color:"#00e676", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700 }}>{s.photo}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:13, color:"#e6edf3" }}>{s.name}</div>
-              <div style={{ fontSize:10, color:"#8b949e" }}>{s.ref} · {s.bus} · {s.grade}</div>
+        {boardedLogs.length===0 && <div style={{ padding:"32px", textAlign:"center", color:"#555" }}>No boardings yet today</div>}
+        {boardedLogs.slice(-10).reverse().map((log: any, i: number) => {
+          const s = students.find((st: any) => st.id === log.id);
+          if (!s) return null;
+          return (
+            <div key={log.id + log.time} style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 20px", borderBottom:i < 9 ?"1px solid #161b22":"none" }}>
+              <div style={{ width:36, height:36, borderRadius:8, background:"#00e67622", color:"#00e676", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700 }}>{s.photo}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, color:"#e6edf3" }}>{s.name}</div>
+                <div style={{ fontSize:10, color:"#8b949e" }}>{s.ref} · {log.bus} · {s.grade}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize:10, color:"#00e676", fontWeight: 700 }}>✓ BOARDED</div>
+                <div style={{ fontSize:9, color:"#555", marginTop: 2 }}>
+                  {new Date(log.time).toLocaleDateString("en-RW", { day: "numeric", month: "short" })} · {new Date(log.time).toLocaleTimeString("en-RW", { hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize:10, color:"#00e676" }}>✓ BOARDED</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -668,13 +756,133 @@ function ArchiveView({ archives }: { archives: any[] }) {
   );
 }
 
+// ─── FLEET MAP VIEW ──────────────────────────────────────────────────────────
+function ChangeView({ center, zoom }: { center: [number, number], zoom: number }) {
+  const map = useMap();
+  map.setView(center, zoom);
+  return null;
+}
+
+function FleetMapView({ busName, boardedLogs }: { busName: string, boardedLogs: any[] }) {
+  const details = BUS_DETAILS[busName];
+  const location = BUS_LOCATIONS[busName];
+  const isActive = boardedLogs.some(log => log.bus === busName);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 12, background: "#ffc80022", color: "#ffc800", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Bus size={28} />
+          </div>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#e6edf3" }}>{busName}</div>
+            <div style={{ fontSize: 13, color: "#8b949e" }}>{details.plate} · {details.driver}</div>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ 
+            display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", 
+            borderRadius: 20, background: isActive ? "#00e67622" : "#ff174422", 
+            border: `1px solid ${isActive ? "#00e67644" : "#ff174444"}`,
+            color: isActive ? "#00e676" : "#ff1744", fontSize: 12, fontWeight: 700
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: isActive ? "#00e676" : "#ff1744", animation: isActive ? "pulse 2s infinite" : "none" }} />
+            {isActive ? "ACTIVE SESSION" : "INACTIVE"}
+          </div>
+          <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>Last signal: {location.lastUpdate}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 24, flex: 1 }}>
+        {/* Interactive Map */}
+        <div style={{ 
+          background: "#0d1117", border: "1px solid #21262d", borderRadius: 16, 
+          position: "relative", overflow: "hidden", minHeight: 400
+        }}>
+          <MapContainer 
+            center={[location.lat, location.lng]} 
+            zoom={13} 
+            style={{ height: "100%", width: "100%", background: "#0d1117" }}
+            zoomControl={false}
+          >
+            <ChangeView center={[location.lat, location.lng]} zoom={13} />
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            />
+            {Object.entries(BUS_LOCATIONS).map(([name, loc]) => {
+              const busIsActive = boardedLogs.some(log => log.bus === name);
+              const busDetails = BUS_DETAILS[name];
+              return (
+                <Marker key={name} position={[loc.lat, loc.lng]}>
+                  <Popup>
+                    <div style={{ minWidth: 180, padding: "4px 0" }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#ffc800", marginBottom: 4 }}>{name}</div>
+                      <div style={{ fontSize: 11, color: "#333", marginBottom: 8 }}>{busDetails.plate}</div>
+                      <div style={{ height: 1, background: "#eee", marginBottom: 8 }} />
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: "#666" }}>DRIVER</span>
+                        <span style={{ fontSize: 10, fontWeight: 700 }}>{busDetails.driver}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: "#666" }}>STATUS</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: busIsActive ? "#00e676" : "#ff1744" }}>
+                          {busIsActive ? "ACTIVE" : "INACTIVE"}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 9, color: "#999", marginTop: 8 }}>Last update: {loc.lastUpdate}</div>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+          </MapContainer>
+          
+          {/* Map UI Overlay */}
+          <div style={{ position: "absolute", bottom: 20, left: 20, background: "#161b22cc", padding: "12px", borderRadius: 12, border: "1px solid #21262d", backdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 1000 }}>
+            <div style={{ fontSize: 10, color: "#8b949e", letterSpacing: 1, marginBottom: 4 }}>CURRENT COORDINATES</div>
+            <div style={{ fontSize: 13, color: "#e6edf3", fontFamily: "'DM Mono',monospace" }}>{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</div>
+          </div>
+        </div>
+
+        {/* Info Panel */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 16, padding: 20 }}>
+            <div style={{ fontSize: 11, color: "#8b949e", letterSpacing: 2, marginBottom: 16 }}>ROUTE PROGRESS</div>
+            <div style={{ position: "relative", paddingLeft: 20 }}>
+              <div style={{ position: "absolute", left: 4, top: 4, bottom: 4, width: 2, background: "#21262d" }} />
+              {[
+                { label: "Start: Kicukiro", done: true },
+                { label: "Checkpoint 1", done: isActive },
+                { label: "Checkpoint 2", done: false },
+                { label: "School", done: false }
+              ].map((step, i) => (
+                <div key={i} style={{ marginBottom: 16, position: "relative" }}>
+                  <div style={{ 
+                    position: "absolute", left: -20, top: 4, width: 10, height: 10, 
+                    borderRadius: "50%", background: step.done ? "#00e676" : "#21262d",
+                    border: `2px solid ${step.done ? "#00e676" : "#30363d"}`,
+                    boxShadow: step.done ? "0 0 8px #00e67666" : "none"
+                  }} />
+                  <div style={{ fontSize: 12, color: step.done ? "#e6edf3" : "#555" }}>{step.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [role, setRole] = useState<UserRole>(null);
   const [view, setView] = useState("dashboard");
   const [activeBus, setActiveBus] = useState("Bus A");
   const [students, setStudents] = useState(INITIAL_STUDENTS);
-  const [boardedIds, setBoardedIds] = useState<number[]>([]);
+  const [boardedLogs, setBoardedLogs] = useState<any[]>([]);
   const [usedRefs, setUsedRefs] = useState<string[]>([]);
   const [archives, setArchives] = useState<any[]>([]);
   const [toasts, setToasts] = useState<any[]>([]);
@@ -698,24 +906,24 @@ export default function App() {
   };
 
   const onBoard = (id: number, ref: string) => {
-    setBoardedIds(p => [...p, id]);
+    setBoardedLogs(p => [...p, { id, time: new Date().toISOString(), bus: activeBus }]);
     setUsedRefs(p => [...p, ref]);
   };
 
   const archiveSession = () => {
-    if (boardedIds.length === 0) return addToast("No boardings to archive", "error");
+    if (boardedLogs.length === 0) return addToast("No boardings to archive", "error");
     
     const sessionData = {
       id: Date.now(),
       bus: activeBus,
       term: CURRENT_TERM,
       date: new Date().toISOString(),
-      students: students.filter(s => boardedIds.includes(s.id))
+      students: students.filter(s => boardedLogs.some(l => l.id === s.id))
     };
 
     setArchives(p => [sessionData, ...p]);
-    setBoardedIds([]);
-    addToast(`Session archived: ${boardedIds.length} students`, "success");
+    setBoardedLogs([]);
+    addToast(`Session archived: ${boardedLogs.length} students`, "success");
   };
 
   if (!role) {
@@ -753,11 +961,11 @@ export default function App() {
           <div style={{ padding: "0 12px 20px" }}>
             <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, marginBottom: 8, paddingLeft: 8 }}>FLEET MONITOR</div>
             {BUSES.map(b => (
-              <button key={b} onClick={() => setActiveBus(b)} style={{
+              <button key={b} onClick={() => { setActiveBus(b); setView("fleet-map"); }} style={{
                 width: "100%", padding: "8px 12px", marginBottom: 4,
-                background: activeBus === b ? "#ffc80022" : "transparent",
-                border: `1px solid ${activeBus === b ? "#ffc80055" : "transparent"}`,
-                borderRadius: 8, color: activeBus === b ? "#ffc800" : "#8b949e",
+                background: (activeBus === b && view === "fleet-map") ? "#ffc80022" : "transparent",
+                border: `1px solid ${(activeBus === b && view === "fleet-map") ? "#ffc80055" : "transparent"}`,
+                borderRadius: 8, color: (activeBus === b && view === "fleet-map") ? "#ffc800" : "#8b949e",
                 cursor: "pointer", fontFamily: "'DM Mono',monospace", fontSize: 12,
                 display: "flex", alignItems: "center", gap: 8, textAlign: "left"
               }}>
@@ -808,10 +1016,10 @@ export default function App() {
         <div style={{ height: 58, borderBottom: "1px solid #21262d", padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0d1117", position: "sticky", top: 0, zIndex: 50 }}>
           <div>
             <div style={{ fontSize: 16, color: "#e6edf3", fontWeight: 700 }}>
-              {view === "dashboard" ? "Overview" : view === "scan" ? `Scan — ${activeBus}` : view === "bus-details" ? "Bus Assignment" : "Student Registry"}
+              {view === "dashboard" ? "Overview" : view === "scan" ? `Scan — ${activeBus}` : view === "bus-details" ? "Bus Assignment" : view === "fleet-map" ? `Fleet Monitor — ${activeBus}` : "Student Registry"}
             </div>
             <div style={{ fontSize: 10, color: "#8b949e" }}>
-              {view === "scan" ? ROUTES[activeBus] : view === "students" ? `${students.length} registered` : "STI Smart Transport System"}
+              {view === "scan" || view === "fleet-map" ? ROUTES[activeBus] : view === "students" ? `${students.length} registered` : "STI Smart Transport System"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -825,11 +1033,12 @@ export default function App() {
 
         {/* Content */}
         <div style={{ flex: 1, padding: 28, overflowY: "auto" }}>
-          {view === "dashboard" && <Dashboard students={students} boardedIds={boardedIds} />}
-          {view === "scan" && <ScannerView students={students} activeBus={activeBus} boardedIds={boardedIds} usedRefs={usedRefs} onBoard={onBoard} archiveSession={archiveSession} addToast={addToast} />}
+          {view === "dashboard" && <Dashboard students={students} boardedLogs={boardedLogs} role={role} setView={setView} setActiveBus={setActiveBus} />}
+          {view === "scan" && <ScannerView students={students} activeBus={activeBus} boardedLogs={boardedLogs} usedRefs={usedRefs} onBoard={onBoard} archiveSession={archiveSession} addToast={addToast} />}
           {view === "students" && <StudentsView students={students} setStudents={setStudents} addToast={addToast} />}
           {view === "archive" && <ArchiveView archives={archives} />}
           {view === "bus-details" && <BusDetailsView busName={studentAssignedBus} />}
+          {view === "fleet-map" && <FleetMapView busName={activeBus} boardedLogs={boardedLogs} />}
         </div>
       </div>
 
