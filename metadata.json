@@ -1,0 +1,5 @@
+{
+  "name": "STI Smart Bus Transport",
+  "description": "A student transport management system with real-time boarding tracking, fee verification, and parent notifications.",
+  "requestFramePermissions": []
+}
